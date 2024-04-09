@@ -8,11 +8,11 @@ import PIL
 from vqvae import VectorQuantizedVAE
 from pixelcnn import PixelCNN
 
-N_EPOCHS = 64
+N_EPOCHS = 128
 BATCH_SIZE = 8
 LEARNING_RATE = 3e-4
 DECAY_RATE = 0.96
-BETA = 0.2
+BETA = 0.25
 N_LATENTS = 512
 EMBEDDING_DIM = 64
 
@@ -21,6 +21,7 @@ if __name__ == "__main__":
         torchvision.transforms.Resize(size=(128, 128)),
         torchvision.transforms.ToTensor()
     ])
+
     train = torchvision.datasets.MNIST(root=os.getcwd() + "/data", train=True, download=True, transform=transforms)
     train_loader = torch.utils.data.DataLoader(train, batch_size=BATCH_SIZE, shuffle=True, num_workers=2, drop_last=True)
     test = torchvision.datasets.MNIST(root=os.getcwd() + "/data", train=False, download=True, transform=transforms)
