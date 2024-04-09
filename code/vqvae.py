@@ -9,18 +9,18 @@ class Encoder(torch.nn.Module):
         super().__init__()
         self.operations = torch.nn.Sequential(
             # (3, 128, 128)
-            ResidualBlock(channel_dim=N_CHANNELS, kernel_dim=5),
-            ConvBlock(in_channel_dim=N_CHANNELS, out_channel_dim=8, kernel_dim=5, padding_dim=2),
+            ResidualBlock(in_channel_dim=N_CHANNELS, upsample_dim=128, kernel_dim=5),
+            ConvBlock(in_channel_dim=N_CHANNELS, out_channel_dim=128, kernel_dim=5, padding_dim=2),
             torch.nn.MaxPool2d(kernel_size=2, stride=2),
-            # (8, 64, 64)
-            ResidualBlock(channel_dim=8, kernel_dim=3),
-            ConvBlock(in_channel_dim=8, out_channel_dim=16, kernel_dim=3, padding_dim=1),
+            # (128, 64, 64)
+            ResidualBlock(in_channel_dim=128, upsample_dim=256, kernel_dim=3),
+            ConvBlock(in_channel_dim=128, out_channel_dim=256, kernel_dim=3, padding_dim=1),
             torch.nn.MaxPool2d(kernel_size=2, stride=2),
-            # (16, 32, 32)
-            ResidualBlock(channel_dim=16, kernel_dim=3),
-            ConvBlock(in_channel_dim=16, out_channel_dim=32, kernel_dim=3, padding_dim=1),
+            # (256, 32, 32)
+            ResidualBlock(in_channel_dim=256, upsample_dim=512, kernel_dim=3),
+            ConvBlock(in_channel_dim=256, out_channel_dim=64, kernel_dim=3, padding_dim=1),
             torch.nn.MaxPool2d(kernel_size=2, stride=2)
-            # (32, 16, 16)
+            # (64, 16, 16)
         )
 
     def forward(self, X):
@@ -30,15 +30,15 @@ class Decoder(torch.nn.Module):
     def __init__(self):
         super().__init__()
         self.operations = torch.nn.Sequential(
-            # (32, 16, 16)
-            ResidualBlock(channel_dim=32, kernel_dim=3),
-            TransposeConvBlock(in_channel_dim=32, out_channel_dim=16, kernel_dim=2),
-            # (16, 32, 32)
-            ResidualBlock(channel_dim=16, kernel_dim=3),
-            TransposeConvBlock(in_channel_dim=16, out_channel_dim=8, kernel_dim=2),
-            # (8, 64, 64)
-            ResidualBlock(channel_dim=8, kernel_dim=5),
-            TransposeConvBlock(in_channel_dim=8, out_channel_dim=N_CHANNELS, kernel_dim=2)
+            # (64, 16, 16)
+            ResidualBlock(in_channel_dim=64, upsample_dim=128, kernel_dim=3),
+            TransposeConvBlock(in_channel_dim=64, out_channel_dim=128, kernel_dim=2),
+            # (128, 32, 32)
+            ResidualBlock(in_channel_dim=128, upsample_dim=256, kernel_dim=3),
+            TransposeConvBlock(in_channel_dim=128, out_channel_dim=256, kernel_dim=2),
+            # (256, 64, 64)
+            ResidualBlock(in_channel_dim=256, upsample_dim=512, kernel_dim=5),
+            TransposeConvBlock(in_channel_dim=256, out_channel_dim=N_CHANNELS, kernel_dim=2)
             # (3, 128, 128)
         )
 

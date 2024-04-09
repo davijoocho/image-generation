@@ -6,14 +6,15 @@ import torchvision
 import numpy as np
 import PIL
 from vqvae import VectorQuantizedVAE
+from pixelcnn import PixelCNN
 
-N_EPOCHS = 128
+N_EPOCHS = 64
 BATCH_SIZE = 8
-LEARNING_RATE = 5e-5
+LEARNING_RATE = 3e-4
 DECAY_RATE = 0.96
-BETA = 0.25
+BETA = 0.2
 N_LATENTS = 512
-EMBEDDING_DIM = 32
+EMBEDDING_DIM = 64
 
 if __name__ == "__main__":
     transforms = torchvision.transforms.Compose([
@@ -21,44 +22,60 @@ if __name__ == "__main__":
         torchvision.transforms.ToTensor()
     ])
     train = torchvision.datasets.MNIST(root=os.getcwd() + "/data", train=True, download=True, transform=transforms)
-    train_ldr = torch.utils.data.DataLoader(train, batch_size=BATCH_SIZE, shuffle=True, num_workers=2, drop_last=True)
-
+    train_loader = torch.utils.data.DataLoader(train, batch_size=BATCH_SIZE, shuffle=True, num_workers=2, drop_last=True)
     test = torchvision.datasets.MNIST(root=os.getcwd() + "/data", train=False, download=True, transform=transforms)
-    test_ldr = torch.utils.data.DataLoader(test, batch_size=1, shuffle=True, num_workers=2, drop_last=True)
+    test_loader = torch.utils.data.DataLoader(test, batch_size=1, shuffle=True, num_workers=2, drop_last=True)
 
+    vqvae = VectorQuantizedVAE(N_LATENTS, EMBEDDING_DIM)
+    vqvae_optimizer = torch.optim.SGD(vqvae.parameters(), lr=LEARNING_RATE)
+    vqvae_scheduler = torch.optim.lr_scheduler.ExponentialLR(vqvae_optimizer, gamma=DECAY_RATE)
+    mse_loss = torch.nn.MSELoss()
 
-    model = VectorQuantizedVAE(N_LATENTS, EMBEDDING_DIM)
-    optimizer = torch.optim.SGD(model.parameters(), lr=LEARNING_RATE)
-    scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=DECAY_RATE)
-    loss = torch.nn.MSELoss()
+    pixelcnn = PixelCNN(N_LATENTS)
+    pixelcnn_optimizer = torch.optim.SGD(pixelcnn.parameters(), lr=LEARNING_RATE)
+    pixelcnn_scheduler = torch.optim.lr_scheduler.ExponentialLR(pixelcnn_optimizer, gamma=DECAY_RATE)
+    nll_loss = torch.nn.NLLLoss()
+    log_softmax = torch.nn.LogSoftmax(dim=1)
 
-    model.train()
     for epoch in range(N_EPOCHS):
-        for images, label in train_ldr:
-            encoder_out, decoder_in, decoder_out = model(images)
+        vqvae.train()
+        for images, labels in train_loader:
+            encoder_out, decoder_in, decoder_out = vqvae(images)
 
-            reconstruction_loss = loss(decoder_out, images)
-            quantization_loss = loss(encoder_out.detach(), decoder_in)
-            commitment_loss = loss(decoder_in, encoder_out.detach())
-            total_loss = reconstruction_loss + quantization_loss + BETA*commitment_loss
+            reconstruction_loss = mse_loss(decoder_out, images)
+            quantization_loss = mse_loss(encoder_out.detach(), decoder_in)
+            commitment_loss = mse_loss(decoder_in, encoder_out.detach())
+            vqvae_loss = reconstruction_loss + quantization_loss + BETA * commitment_loss
 
-            optimizer.zero_grad()
-            total_loss.backward()
-            optimizer.step()
+            vqvae_optimizer.zero_grad()
+            vqvae_loss.backward()
+            vqvae_optimizer.step()
 
-        scheduler.step()
+        vqvae_scheduler.step()
 
-    model.eval()
-    test_imgs = iter(test_ldr)
+        vqvae.eval()
+        test_imgs = iter(test_loader)
+        for _ in range(4):
+            image, label = next(test_imgs)
+            encoder_out, decoder_in, decoder_out = vqvae(image)
+            image = decoder_out.squeeze(dim=0).squeeze(dim=0)
+            image = (image.detach().numpy() * 255).astype(np.uint8)
+            image = PIL.Image.fromarray(image)
+            image_file = open(os.getcwd() + "/data/reconstructions/epoch_" + str(epoch) + "_example_" + str(_) + ".png", "wb")
+            image.save(image_file, format="PNG")
 
-    for _ in range(4):
-        image, label = next(test_imgs)
-        encoder_out, decoder_in, decoder_out = model(image)
-        image = decoder_out.squeeze(dim=0).squeeze(dim=0)
-        image = (image.detach().numpy() * 255).astype(np.uint8)
-        image = PIL.Image.fromarray(image)
-        image_file = open(os.getcwd() + "/data/reconstructions/epoch_" + str(epoch) + "_example_" + str(_) + ".png", "wb")
-        image.save(image_file, format="PNG")
+    pixelcnn.train()
+    for epoch in range(N_EPOCHS):
+        for images, labels in train_loader:
+            latent = vqvae.fetch_latent(vqvae.compress(images))
+            logits = pixelcnn(latent.unsqueeze(dim=1))
+            log_proba = log_softmax(logits)
+            pixelcnn_loss = nll_loss(log_proba, latent)
 
-    torch.save(model.state_dict(), os.getcwd() + "/model/vqvae_latest_version.pt")
+            pixelcnn_optimizer.zero_grad()
+            pixelcnn_loss.backward()
+            pixelcnn_optimizer.step()
+
+    torch.save(vqvae.state_dict(), os.getcwd() + "/model/vqvae_latest_version.pt")
+    torch.save(pixelcnn.state_dict(), os.getcwd() + "/model/pixelcnn_latest_version.pt")
 

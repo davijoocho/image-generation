@@ -9,16 +9,17 @@ class ConvBlock(torch.nn.Module):
             torch.nn.BatchNorm2d(num_features=out_channel_dim, affine=False),
             torch.nn.ReLU()
         )
+        torch.nn.init.kaiming_normal_(self.operations[0].weight, a=1e-4)
 
     def forward(self, X):
         return self.operations(X)
 
 class ResidualBlock(torch.nn.Module):
-    def __init__(self, channel_dim, kernel_dim):
+    def __init__(self, in_channel_dim, upsample_dim, kernel_dim):
         super().__init__()
         self.operations = torch.nn.Sequential(
-            ConvBlock(channel_dim, channel_dim, kernel_dim, kernel_dim // 2),
-            ConvBlock(channel_dim, channel_dim, kernel_dim, kernel_dim // 2)
+            ConvBlock(in_channel_dim, upsample_dim, kernel_dim, kernel_dim // 2),
+            ConvBlock(upsample_dim, in_channel_dim, kernel_dim, kernel_dim // 2)
         )
 
     def forward(self, X):
@@ -32,6 +33,7 @@ class TransposeConvBlock(torch.nn.Module):
             torch.nn.BatchNorm2d(num_features=out_channel_dim, affine=False),
             torch.nn.ReLU()
         )
+        torch.nn.init.kaiming_normal_(self.operations[0].weight, a=1e-4)
 
     def forward(self, X):
         return self.operations(X)
