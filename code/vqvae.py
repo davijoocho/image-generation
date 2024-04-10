@@ -1,13 +1,20 @@
 
 import torch 
+import time
 
-N_CHANNELS = 1
+N_LATENTS = 512
+EMBEDDING_DIM = 64
 
 class ConvBlock(torch.nn.Module): 
-    def __init__(self, in_channel_dim, out_channel_dim, kernel_dim, padding_dim):
+    def __init__(self, in_channel_dim, out_channel_dim, kernel_dim):
         super().__init__()
         self.operations = torch.nn.Sequential(
-            torch.nn.Conv2d(in_channels=in_channel_dim, out_channels=out_channel_dim, kernel_size=kernel_dim, padding=padding_dim),
+            torch.nn.Conv2d(
+                in_channels = in_channel_dim, 
+                out_channels = out_channel_dim, 
+                kernel_size = kernel_dim, 
+                padding = kernel_dim // 2
+            ),
             torch.nn.BatchNorm2d(num_features=out_channel_dim, affine=False),
             torch.nn.ReLU()
         )
@@ -20,18 +27,24 @@ class ResidualBlock(torch.nn.Module):
     def __init__(self, in_channel_dim, upsample_dim, kernel_dim):
         super().__init__()
         self.operations = torch.nn.Sequential(
-            ConvBlock(in_channel_dim, upsample_dim, kernel_dim, kernel_dim // 2),
-            ConvBlock(upsample_dim, in_channel_dim, kernel_dim, kernel_dim // 2)
+            ConvBlock(in_channel_dim, upsample_dim, kernel_dim),
+            ConvBlock(upsample_dim, in_channel_dim, kernel_dim)
         )
 
     def forward(self, X):
         return self.operations(X) + X
 
 class TransposeConvBlock(torch.nn.Module):
-    def __init__(self, in_channel_dim, out_channel_dim, kernel_dim):
+    def __init__(self, in_channel_dim, out_channel_dim, kernel_dim, stride_dim, padding_dim):
         super().__init__()
         self.operations = torch.nn.Sequential(
-            torch.nn.ConvTranspose2d(in_channels=in_channel_dim, out_channels=out_channel_dim, kernel_size=kernel_dim, stride=kernel_dim),
+            torch.nn.ConvTranspose2d(
+                in_channels = in_channel_dim, 
+                out_channels = out_channel_dim, 
+                kernel_size = kernel_dim, 
+                stride = stride_dim, 
+                padding = padding_dim
+            ),
             torch.nn.BatchNorm2d(num_features=out_channel_dim, affine=False),
             torch.nn.ReLU()
         )
@@ -45,16 +58,15 @@ class Encoder(torch.nn.Module):
         super().__init__()
         self.operations = torch.nn.Sequential(
             # (3, 128, 128)
-            ResidualBlock(in_channel_dim=N_CHANNELS, upsample_dim=128, kernel_dim=5),
-            ConvBlock(in_channel_dim=N_CHANNELS, out_channel_dim=128, kernel_dim=5, padding_dim=2),
+            ConvBlock(in_channel_dim=1, out_channel_dim=32, kernel_dim=5),
+            ResidualBlock(in_channel_dim=32, upsample_dim=64, kernel_dim=5),
             torch.nn.MaxPool2d(kernel_size=2, stride=2),
-            # (128, 64, 64)
-            ResidualBlock(in_channel_dim=128, upsample_dim=256, kernel_dim=3),
-            ConvBlock(in_channel_dim=128, out_channel_dim=256, kernel_dim=3, padding_dim=1),
+            # (32, 64, 64)
+            ConvBlock(in_channel_dim=32, out_channel_dim=64, kernel_dim=3),
+            ResidualBlock(in_channel_dim=64, upsample_dim=64, kernel_dim=3),
             torch.nn.MaxPool2d(kernel_size=2, stride=2),
-            # (256, 32, 32)
-            ResidualBlock(in_channel_dim=256, upsample_dim=512, kernel_dim=3),
-            ConvBlock(in_channel_dim=256, out_channel_dim=64, kernel_dim=3, padding_dim=1),
+            # (64, 32, 32)
+            ResidualBlock(in_channel_dim=64, upsample_dim=64, kernel_dim=1),
             torch.nn.MaxPool2d(kernel_size=2, stride=2)
             # (64, 16, 16)
         )
@@ -67,14 +79,14 @@ class Decoder(torch.nn.Module):
         super().__init__()
         self.operations = torch.nn.Sequential(
             # (64, 16, 16)
-            ResidualBlock(in_channel_dim=64, upsample_dim=128, kernel_dim=3),
-            TransposeConvBlock(in_channel_dim=64, out_channel_dim=128, kernel_dim=2),
-            # (128, 32, 32)
-            ResidualBlock(in_channel_dim=128, upsample_dim=256, kernel_dim=3),
-            TransposeConvBlock(in_channel_dim=128, out_channel_dim=256, kernel_dim=2),
-            # (256, 64, 64)
-            ResidualBlock(in_channel_dim=256, upsample_dim=512, kernel_dim=5),
-            TransposeConvBlock(in_channel_dim=256, out_channel_dim=N_CHANNELS, kernel_dim=2)
+            TransposeConvBlock(in_channel_dim=64, out_channel_dim=32, kernel_dim=4, stride_dim=2, padding_dim=1),
+            ResidualBlock(in_channel_dim=32, upsample_dim=64, kernel_dim=3),
+            # (32, 32, 32)
+            TransposeConvBlock(in_channel_dim=32, out_channel_dim=16, kernel_dim=4, stride_dim=2, padding_dim=1),
+            ResidualBlock(in_channel_dim=16, upsample_dim=64, kernel_dim=3),
+            # (16, 64, 64)
+            TransposeConvBlock(in_channel_dim=16, out_channel_dim=1, kernel_dim=4, stride_dim=2, padding_dim=1),
+            ResidualBlock(in_channel_dim=1, upsample_dim=64, kernel_dim=1)
             # (3, 128, 128)
         )
 
@@ -82,13 +94,10 @@ class Decoder(torch.nn.Module):
         return self.operations(X)
 
 class VectorQuantizedVAE(torch.nn.Module):
-    def __init__(self, n_latents, embedding_dim):
+    def __init__(self):
         super().__init__()
-        self.n_latents = n_latents
-        self.embedding_dim = embedding_dim
-
         self.encoder = Encoder()
-        self.embeddings = torch.nn.Embedding(num_embeddings=self.n_latents, embedding_dim=self.embedding_dim)
+        self.embeddings = torch.nn.Embedding(num_embeddings=N_LATENTS, embedding_dim=EMBEDDING_DIM)
         self.decoder = Decoder()
 
     def compress(self, X):
@@ -96,25 +105,26 @@ class VectorQuantizedVAE(torch.nn.Module):
 
     def fetch_latent(self, X):
         X_transpose = X.permute(dims=(0,2,3,1))
-        latent_embeddings = self.embeddings.weight.expand(16, self.n_latents, self.embedding_dim)
+        latent_embeddings = self.embeddings.weight.expand(16, N_LATENTS, EMBEDDING_DIM)
 
-        X_latent = []
+        X_distances = []
         for x in X_transpose:
-            distances = torch.cdist(x, latent_embeddings)
-            nearest_latents = distances.argmin(dim=2).unsqueeze(dim=0)
-            X_latent.append(nearest_latents)
-        X_latent = torch.cat(X_latent, dim=0)
+            distances = torch.cdist(x, latent_embeddings).unsqueeze(dim=0)
+            X_distances.append(distances)
 
-        return X_latent
+        X_distances = torch.cat(X_distances, dim=0)
+        X_latents = X_distances.argmin(dim=3)
+
+        return X_latents
 
     def reconstruct(self, X):
         return self.decoder(X)
 
     def forward(self, X):
         encoder_out = self.compress(X)
-
         latents = self.fetch_latent(encoder_out)
-        decoder_in = self.embeddings(latents).permute(dims=(0,3,1,2))
+
+        decoder_in = self.embeddings(latents).permute(dims=(0, 3, 1, 2))
 
         straight_through_estimate = encoder_out + (decoder_in - encoder_out).detach()
         decoder_out = self.reconstruct(straight_through_estimate)

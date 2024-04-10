@@ -2,15 +2,13 @@
 import torch 
 import numpy as np
 
-N_CHANNELS = 1
-
 VERTICAL_KERNEL_H = 2
 VERTICAL_KERNEL_W = 3
 
 HORIZONTAL_KERNEL_H = 1
 HORIZONTAL_KERNEL_W = 2
 
-class DualConvBlock(torch.nn.Module):
+class ParallelConvBlock(torch.nn.Module):
     def __init__(self, in_channel_dim, out_channel_dim, vertical_pad, horizontal_pad):
         super().__init__()
 
@@ -75,7 +73,7 @@ class GatedResidualBlock(torch.nn.Module):
 
         vertical = self.vertical_conv(X_vertical)
 
-        v_signal, v_gate = vertical.split(self.channel_dim , dim=1)
+        v_signal, v_gate = vertical.split(self.channel_dim, dim=1)
         v_signal = tanh(v_signal)
         v_gate = sigmoid(v_gate)
         X_vertical = torch.mul(v_signal, v_gate)
@@ -95,9 +93,8 @@ class GatedResidualBlock(torch.nn.Module):
         return X_vertical, X_horizontal
 
 class PixelCNN(torch.nn.Module):
-    def __init__(self, n_latents):
+    def __init__(self):
         super().__init__()
-        self.n_latents = n_latents
 
         self.vertical_pad_a = torch.nn.ZeroPad2d((VERTICAL_KERNEL_W // 2, VERTICAL_KERNEL_W // 2, VERTICAL_KERNEL_H, 0))
         self.horizontal_pad_a = torch.nn.ZeroPad2d((HORIZONTAL_KERNEL_W, 0, 0, 0))
@@ -106,16 +103,13 @@ class PixelCNN(torch.nn.Module):
         self.horizontal_pad_b = torch.nn.ZeroPad2d((HORIZONTAL_KERNEL_W - 1, 0, 0, 0))
 
         self.convs = torch.nn.Sequential(
-            DualConvBlock(in_channel_dim=1, out_channel_dim=64, vertical_pad=self.vertical_pad_a, horizontal_pad=self.horizontal_pad_a),
-            GatedResidualBlock(channel_dim=64, vertical_pad=self.vertical_pad_b, horizontal_pad=self.horizontal_pad_b),
-
-            DualConvBlock(in_channel_dim=64, out_channel_dim=128, vertical_pad=self.vertical_pad_b, horizontal_pad=self.horizontal_pad_b),
+            ParallelConvBlock(in_channel_dim=1, out_channel_dim=128, vertical_pad=self.vertical_pad_a, horizontal_pad=self.horizontal_pad_a),
             GatedResidualBlock(channel_dim=128, vertical_pad=self.vertical_pad_b, horizontal_pad=self.horizontal_pad_b),
 
-            DualConvBlock(in_channel_dim=128, out_channel_dim=256, vertical_pad=self.vertical_pad_b, horizontal_pad=self.horizontal_pad_b),
+            ParallelConvBlock(in_channel_dim=128, out_channel_dim=256, vertical_pad=self.vertical_pad_b, horizontal_pad=self.horizontal_pad_b),
             GatedResidualBlock(channel_dim=256, vertical_pad=self.vertical_pad_b, horizontal_pad=self.horizontal_pad_b),
 
-            DualConvBlock(in_channel_dim=256, out_channel_dim=512, vertical_pad=self.vertical_pad_b, horizontal_pad=self.horizontal_pad_b),
+            ParallelConvBlock(in_channel_dim=256, out_channel_dim=512, vertical_pad=self.vertical_pad_b, horizontal_pad=self.horizontal_pad_b),
             GatedResidualBlock(channel_dim=512, vertical_pad=self.vertical_pad_b, horizontal_pad=self.horizontal_pad_b)
         )
 

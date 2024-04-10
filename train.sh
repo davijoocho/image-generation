@@ -3,11 +3,11 @@
 #SBATCH --output="train.out"
 #SBATCH --error="train.out"
 #SBATCH --ntasks=1
-#SBATCH --gpus-per-task=1
-#SBATCH --time=2-00:00:00
+#SBATCj --gpus-per-task=1
+#SBATCH --time=5-00:00:00
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=64G
-#SBATCH --nodelist=c[13]
+#SBATCH --nodelist=c[12]
 
 module purge
 module load anaconda3

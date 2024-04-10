@@ -8,13 +8,11 @@ import PIL
 from vqvae import VectorQuantizedVAE
 from pixelcnn import PixelCNN
 
-N_EPOCHS = 128
-BATCH_SIZE = 8
-LEARNING_RATE = 3e-4
+N_EPOCHS = 64
+BATCH_SIZE = 256
+LEARNING_RATE = 2e-4
 DECAY_RATE = 0.96
 BETA = 0.25
-N_LATENTS = 512
-EMBEDDING_DIM = 64
 
 if __name__ == "__main__":
     transforms = torchvision.transforms.Compose([
@@ -27,12 +25,12 @@ if __name__ == "__main__":
     test = torchvision.datasets.MNIST(root=os.getcwd() + "/data", train=False, download=True, transform=transforms)
     test_loader = torch.utils.data.DataLoader(test, batch_size=1, shuffle=True, num_workers=2, drop_last=True)
 
-    vqvae = VectorQuantizedVAE(N_LATENTS, EMBEDDING_DIM)
+    vqvae = VectorQuantizedVAE()
     vqvae_optimizer = torch.optim.SGD(vqvae.parameters(), lr=LEARNING_RATE)
     vqvae_scheduler = torch.optim.lr_scheduler.ExponentialLR(vqvae_optimizer, gamma=DECAY_RATE)
     mse_loss = torch.nn.MSELoss()
 
-    pixelcnn = PixelCNN(N_LATENTS)
+    pixelcnn = PixelCNN()
     pixelcnn_optimizer = torch.optim.SGD(pixelcnn.parameters(), lr=LEARNING_RATE)
     pixelcnn_scheduler = torch.optim.lr_scheduler.ExponentialLR(pixelcnn_optimizer, gamma=DECAY_RATE)
     nll_loss = torch.nn.NLLLoss()
@@ -40,6 +38,7 @@ if __name__ == "__main__":
 
     for epoch in range(N_EPOCHS):
         vqvae.train()
+        batch = 0
         for images, labels in train_loader:
             encoder_out, decoder_in, decoder_out = vqvae(images)
 
@@ -51,6 +50,9 @@ if __name__ == "__main__":
             vqvae_optimizer.zero_grad()
             vqvae_loss.backward()
             vqvae_optimizer.step()
+
+            print("BATCH", batch, "COMPLETED", flush=True)
+            batch = batch + 1
 
         vqvae_scheduler.step()
 
@@ -65,6 +67,8 @@ if __name__ == "__main__":
             image_file = open(os.getcwd() + "/data/reconstructions/epoch_" + str(epoch) + "_example_" + str(_) + ".png", "wb")
             image.save(image_file, format="PNG")
 
+    torch.save(vqvae.state_dict(), os.getcwd() + "/model/vqvae_latest_version.pt")
+
     pixelcnn.train()
     for epoch in range(N_EPOCHS):
         for images, labels in train_loader:
@@ -77,6 +81,7 @@ if __name__ == "__main__":
             pixelcnn_loss.backward()
             pixelcnn_optimizer.step()
 
-    torch.save(vqvae.state_dict(), os.getcwd() + "/model/vqvae_latest_version.pt")
+        pixelcnn_scheduler.step()
+
     torch.save(pixelcnn.state_dict(), os.getcwd() + "/model/pixelcnn_latest_version.pt")
 
